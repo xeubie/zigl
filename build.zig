@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const Translator = @import("translate_c").Translator;
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) !void {
     lib.root_module.addCSourceFiles(.{
         .files = &base_sources,
     });
-    switch (builtin.os.tag) {
+    switch (target.result.os.tag) {
         .windows => {
             lib.root_module.linkSystemLibrary("gdi32", .{});
             lib.root_module.linkSystemLibrary("user32", .{});
@@ -95,6 +95,23 @@ pub fn build(b: *std.Build) !void {
     }
 
     b.installArtifact(lib);
+
+    // expose the GLAD and GLFW headers to dependents as a Zig module named "zigl",
+    // which also links the library.
+    const translate_c = b.dependency("translate_c", .{});
+    const translator: Translator = .init(translate_c, .{
+        .name = "zigl",
+        .c_source_file = b.addWriteFiles().add("zigl.h",
+            \\#include <glad/gl.h>
+            \\#include <GLFW/glfw3.h>
+            \\
+        ),
+        .target = target,
+        .optimize = optimize,
+    });
+    translator.addIncludePath(b.path("include"));
+    translator.linkLibrary(lib);
+    b.modules.put(b.graph.arena, "zigl", translator.mod) catch @panic("OOM");
 }
 
 const base_sources = [_][]const u8{
